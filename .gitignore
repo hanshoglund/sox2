@@ -1,0 +1,4 @@
+dist
+*.wav
+.DS_Store
+*.aiff
