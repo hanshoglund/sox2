@@ -1,5 +1,6 @@
 
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Sound.Sox2 where
 
@@ -15,9 +16,11 @@ type Cents = Integer
 
 data SoxExpr where
   File       :: FilePath -> SoxExpr
+  Repeat     :: Int -> SoxExpr -> SoxExpr
   Delay      :: Seconds -> SoxExpr -> SoxExpr
   PitchShift :: Cents -> SoxExpr -> SoxExpr
   Mix        :: SoxExpr -> SoxExpr -> SoxExpr
+  Reverb     :: ReverbMode -> Reverberance -> HighFreqDamping -> SoxExpr -> SoxExpr
 
 instance Semigroup SoxExpr where
   (<>) = Mix
@@ -27,12 +30,18 @@ instance Monoid SoxExpr where
 compile :: SoxExpr -> Sox Audio
 compile = go where
   go (File p)    = return (Audio p)
+  go (Repeat n a) = do
+    a' <- compile a
+    repeat' n a'
   go (Delay t a) = do
     a' <- compile a
     pad t a'
   go (PitchShift c a) = do
     a' <- compile a
     pitch c a'
+  go (Reverb m r hfd a) = do
+    a' <- compile a
+    reverb m r hfd a'
   go (Mix a b)   = do
     a' <- compile a
     b' <- compile b
@@ -250,12 +259,31 @@ remix :: Audio -> Sox Audio
 remix = error "No remix"
 
 -- repeat [count (1)]
-repeat :: Audio -> Sox Audio
-repeat = error "No repeat"
+repeat' :: Int -> Audio -> Sox Audio
+repeat' n (Audio inf) = do
+  outf <- newOutput
+  runSystem $ "sox "++inf++" "++outf++" repeat " ++ show n
+  return $ Audio outf
 
 -- reverb [−w|−−wet-only] [reverberance (50%) [HF-damping (50%)
-reverb :: Audio -> Sox Audio
-reverb = error "No reverb"
+newtype Percent = Percent Int
+  deriving (Eq, Ord, Num, Enum, Real, Integral)
+instance Show Percent where
+  show (Percent x) = show (limit (0,100) x)
+    where
+      limit (m,n) x = (m `max` x) `min` n
+
+data ReverbMode = DryWet | Wet
+instance Show ReverbMode where
+  show DryWet = ""
+  show Wet    = "--wet-only"
+type Reverberance = Percent
+type HighFreqDamping = Percent
+reverb :: ReverbMode -> Reverberance -> HighFreqDamping -> Audio -> Sox Audio
+reverb m r hfd (Audio inf) = do
+  outf <- newOutput
+  runSystem $ "sox "++inf++" "++outf++" reverb " ++ show m ++ " " ++ show r ++ " " ++ show hfd
+  return $ Audio outf
 
 -- reverse
 reverse :: Audio -> Sox Audio
