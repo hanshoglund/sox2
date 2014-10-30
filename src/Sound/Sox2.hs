@@ -20,14 +20,17 @@ data SoxExpr where
   Repeat     :: Int -> SoxExpr -> SoxExpr
   Delay      :: Seconds -> SoxExpr -> SoxExpr
   PitchShift :: Cents -> SoxExpr -> SoxExpr
+  Volume     :: Gain -> SoxExpr -> SoxExpr
   Mix        :: SoxExpr -> SoxExpr -> SoxExpr
   Reverb     :: ReverbMode -> Reverberance -> HighFreqDamping -> SoxExpr -> SoxExpr
 
 instance Semigroup SoxExpr where
   (<>) = Mix
 instance Monoid SoxExpr where
+  -- TODO for mempty change Audio and File to use (Maybe FilePath, and change low-level combinators accordingly)
   mappend = Mix
 
+-- Beware of mconcat etc, use a balanced fold!
 compile :: SoxExpr -> Sox Audio
 compile = go where
   go (File p)    = return (Audio p)
@@ -37,6 +40,9 @@ compile = go where
   go (Delay t a) = do
     a' <- compile a
     pad t a'
+  go (Volume t a) = do
+    a' <- compile a
+    vol t a'
   go (PitchShift c a) = do
     a' <- compile a
     pitch c a'
@@ -64,8 +70,8 @@ compileAndShow e = do
 -- Internal
 newOutput :: Sox FilePath
 newOutput = do
-  System.Process.system "mkdir -p .sox2"
-  (p,_) <-  System.IO.Temp.openTempFile ".sox2" "sox2.wav"
+  System.Process.system "mkdir -p /tmp/sox2"
+  (p,_) <-  System.IO.Temp.openTempFile "/tmp/sox2" "sox2.wav"
   return p
 
 runSystem x = do
@@ -88,7 +94,7 @@ allpass f w (Audio inf) = do
 mix2 :: Audio -> Audio -> Sox Audio
 mix2 (Audio inf1) (Audio inf2) = do
   outf <- newOutput
-  runSystem $ "sox -m "++inf1++" "++inf2++" "++outf
+  runSystem $ "sox -m -v 1 "++inf1++" -v 1 "++inf2++" "++outf
   return $ Audio outf
 
 -- band [−n] center[k] [width[h|k|o|q]]
@@ -352,6 +358,10 @@ upsample = error "No upsample"
 vad :: Audio -> Sox Audio
 vad = error "No vad"
 
+type Gain = Double
 -- vol gain [type [limitergain]]
-vol :: Audio -> Sox Audio
-vol = error "No vol"
+vol :: Gain -> Audio -> Sox Audio
+vol x (Audio inf) = do
+  outf <- newOutput
+  runSystem $ "sox "++inf++" "++outf++" vol " ++ show x
+  return $ Audio outf
