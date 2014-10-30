@@ -7,6 +7,7 @@ module Sound.Sox2 where
 import Data.Semigroup
 import qualified System.IO.Temp
 import qualified System.Process
+import qualified Control.Concurrent.Async
 
 data Audio = Audio FilePath
 type Sox a = IO a
@@ -43,8 +44,9 @@ compile = go where
     a' <- compile a
     reverb m r hfd a'
   go (Mix a b)   = do
-    a' <- compile a
-    b' <- compile b
+    -- a' <- compile a
+    -- b' <- compile b
+    (a', b') <- Control.Concurrent.Async.concurrently (compile a) (compile b)
     mix2 a' b'
 
 compileAndPlay :: SoxExpr -> IO ()
